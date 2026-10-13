@@ -6,6 +6,8 @@
 //   node tools/repack.mjs <root> --dry-run           # 只统计不落盘
 //   node tools/repack.mjs <root> --file <path> [--file <path> ...]   # 只处理指定文件
 //   node tools/repack.mjs <root> --min-frames 64 --min-age-ms 60000
+//   node tools/repack.mjs <root> --backup-dir <dir>  # 替换前把原文件原样备份（建议总是带上）
+// 认两代命名：v0 的 session.jsonl.zstd 与 vN 的 session.v<N>.jsonl.zstd。
 import { repackAll, repackFile, scanZstdFrames } from '../lib/index.mjs'
 import { readFile } from 'node:fs/promises'
 import { performance } from 'node:perf_hooks'
@@ -24,6 +26,8 @@ for (let i = 0; i < args.length; i++) {
 }
 const minFrames = Number(flagValue(args, '--min-frames') ?? 200)
 const minAgeMs = Number(flagValue(args, '--min-age-ms') ?? 600000)
+// 替换前把原文件原样备份一份到这里（强烈建议：会话日志没有第二份）
+const backupDir = flagValue(args, '--backup-dir')
 const now = Date.now()
 
 function sizeLabel(bytes) {
@@ -46,10 +50,10 @@ async function main() {
           continue
         }
       }
-      results.push(await repackFile(file, { minFrames, minAgeMs, now }))
+      results.push(await repackFile(file, { minFrames, minAgeMs, now, backupDir }))
     }
   } else {
-    const { results: all, summary } = await repackAll(root, { minFrames, minAgeMs, now, dryRun })
+    const { results: all, summary } = await repackAll(root, { minFrames, minAgeMs, now, dryRun, backupDir })
     console.log(`\n=== ${dryRun ? 'DRY RUN' : 'REPACK'} ${summary.root} ===`)
     console.log(`scanned ${summary.scanned}, repacked ${summary.repacked}, skipped ${summary.skipped}, total ${summary.totalMs}ms`)
     if (summary.repacked > 0) {
@@ -67,7 +71,8 @@ async function main() {
     else {
       lines.push(
         `OK    ${r.file.split(/[\\/]/).slice(-2).join('/')}  ` +
-          `${r.framesBefore}->${r.framesAfter} frames  ${sizeLabel(r.bytesBefore)}->${sizeLabel(r.bytesAfter)}${r.dryRun ? '  (dry)' : ''}`,
+          `${r.framesBefore}->${r.framesAfter} frames  ${sizeLabel(r.bytesBefore)}->${sizeLabel(r.bytesAfter)}${r.dryRun ? '  (dry)' : ''}` +
+          `${r.backup ? `  backup: ${r.backup}` : ''}`,
       )
     }
   }
